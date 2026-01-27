@@ -2,7 +2,8 @@
 
 #include "Types.h"
 #include "Order.h"
-#include <vector>
+#include <list>
+#include <unordered_map>
 
 // ============================================================================
 // OrderBook 클래스
@@ -37,6 +38,11 @@ private:
     // 멤버 변수
     // ------------------------------------------------------------------------
     
-    std::vector<Order> bids_;  // 매수 주문 목록
-    std::vector<Order> asks_;  // 매도 주문 목록
+    // 매수/매도 주문 대기열 (연결 리스트)
+    std::list<Order> bids_;  // 매수 주문 목록
+    std::list<Order> asks_;  // 매도 주문 목록
+
+    // 주문 ID -> (Side, 리스트 iterator) 매핑 (O(1) 조회/삭제용)
+    using OrderIter = std::list<Order>::iterator;
+    std::unordered_map<OrderId, std::pair<Side, OrderIter>> orderMap_;
 };

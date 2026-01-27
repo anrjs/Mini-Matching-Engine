@@ -11,8 +11,12 @@ void OrderBook::addOrder(const Order& order) {
     // 주문 방향(Side)에 따라 매수/매도 주문 목록에 저장합니다.
     if (order.getSide() == Side::BUY) {
         bids_.push_back(order);
+        auto it = --bids_.end(); // 방금 추가된 요소의 iterator
+        orderMap_[order.getId()] = {Side::BUY, it};
     } else if (order.getSide() == Side::SELL) {
         asks_.push_back(order);
+        auto it = --asks_.end(); // 방금 추가된 요소의 iterator
+        orderMap_[order.getId()] = {Side::SELL, it};
     }
 
     // 주문 접수 직후 즉시 매칭 시도
@@ -21,16 +25,14 @@ void OrderBook::addOrder(const Order& order) {
 
 void OrderBook::matchOrder() {
     // Step 1: bids(매수)는 가격 내림차순, asks(매도)는 가격 오름차순으로 정렬
-    std::sort(bids_.begin(), bids_.end(),
-              [](const Order& a, const Order& b) { return a.getPrice() > b.getPrice(); });
-    std::sort(asks_.begin(), asks_.end(),
-              [](const Order& a, const Order& b) { return a.getPrice() < b.getPrice(); });
+    bids_.sort([](const Order& a, const Order& b) { return a.getPrice() > b.getPrice(); });
+    asks_.sort([](const Order& a, const Order& b) { return a.getPrice() < b.getPrice(); });
 
     // Step 2: 매수/매도 주문이 모두 존재하는 동안 반복
     while (!bids_.empty() && !asks_.empty()) {
-        // Step 3: 최우선 매수(bids_[0])와 최우선 매도(asks_[0]) 비교
-        Order& bestBid = bids_[0];
-        Order& bestAsk = asks_[0];
+        // Step 3: 최우선 매수(bids_.front())와 최우선 매도(asks_.front()) 비교
+        Order& bestBid = bids_.front();
+        Order& bestAsk = asks_.front();
 
         if (bestBid.getPrice() < bestAsk.getPrice()) {
             // 매수가격 < 매도가격이면 체결 불가
@@ -47,12 +49,16 @@ void OrderBook::matchOrder() {
         bestBid.reduceQuantity(matchQty);
         bestAsk.reduceQuantity(matchQty);
 
-        // Step 5: 잔량이 0인 주문 제거
-        if (bids_[0].getQuantity() == 0) {
+        // Step 5: 잔량이 0인 주문 제거 (+ map 동기화)
+        if (bestBid.getQuantity() == 0) {
+            OrderId id = bestBid.getId();
             bids_.erase(bids_.begin());
+            orderMap_.erase(id);
         }
-        if (!asks_.empty() && asks_[0].getQuantity() == 0) {
+        if (!asks_.empty() && bestAsk.getQuantity() == 0) {
+            OrderId id = bestAsk.getId();
             asks_.erase(asks_.begin());
+            orderMap_.erase(id);
         }
     }
 }
@@ -87,24 +93,21 @@ void OrderBook::printStatus() {
 // 주문 취소
 // ============================================================================
 void OrderBook::cancelOrder(OrderId orderId) {
-    // 1) 매수 대기열에서 탐색
-    for (auto it = bids_.begin(); it != bids_.end(); ++it) {
-        if (it->getId() == orderId) {
-            bids_.erase(it);
-            std::cout << "주문 취소 완료(ID: " << orderId << ")" << std::endl;
-            return;
-        }
+    auto found = orderMap_.find(orderId);
+    if (found == orderMap_.end()) {
+        std::cout << "취소 실패: 존재하지 않는 주문(ID: " << orderId << ")" << std::endl;
+        return;
     }
 
-    // 2) 매도 대기열에서 탐색
-    for (auto it = asks_.begin(); it != asks_.end(); ++it) {
-        if (it->getId() == orderId) {
-            asks_.erase(it);
-            std::cout << "주문 취소 완료(ID: " << orderId << ")" << std::endl;
-            return;
-        }
+    Side side = found->second.first;
+    OrderIter it = found->second.second;
+
+    if (side == Side::BUY) {
+        bids_.erase(it);
+    } else {
+        asks_.erase(it);
     }
 
-    // 3) 찾지 못한 경우
-    std::cout << "취소 실패: 존재하지 않는 주문(ID: " << orderId << ")" << std::endl;
+    orderMap_.erase(found);
+    std::cout << "주문 취소 완료(ID: " << orderId << ")" << std::endl;
 }
