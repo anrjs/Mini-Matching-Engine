@@ -11,9 +11,11 @@
  
  #include <winsock2.h>
  #include <ws2tcpip.h>
- #include <windows.h>
- #include <iostream>
- #include <string>
+#include <windows.h>
+#include <iostream>
+#include <string>
+
+#include "Common/Protocol.h"
  
  #pragma comment(lib, "ws2_32.lib")
  
@@ -58,47 +60,68 @@
          return 1;
      }
  
-     std::cout << ">>> 서버(127.0.0.1:" << SERVER_PORT << ")에 접속 성공." << std::endl;
-     std::cout << "메시지를 입력하고 Enter를 누르세요. (종료: 빈 줄 입력)" << std::endl;
- 
-     // ----- 5. 통신 루프 -----
-     std::string line;
-     char recvBuf[4096];
- 
+    std::cout << ">>> 서버(127.0.0.1:" << SERVER_PORT << ")에 접속 성공." << std::endl;
+    std::cout << "주문 정보를 입력하세요." << std::endl;
+    std::cout << "형식: [1:매수, 2:매도] [가격] [수량]" << std::endl;
+    std::cout << "예시: 1 1000 10" << std::endl;
+
+    // ----- 5. 주문 패킷 전송 루프 -----
+    int currentOrderId = 1;
+
      while (true) {
-         std::cout << "> ";
-         // SetConsoleCP(65001) 덕분에 이제 한글을 입력해도 UTF-8 바이트로 들어옵니다.
-         if (!std::getline(std::cin, line)) {
-             break;
-         }
- 
-         if (line.empty()) {
-             break;
-         }
- 
-         // 데이터 전송
-         int bytesToSend = static_cast<int>(line.size());
-         const char* sendData = line.c_str();
- 
-         int totalSent = 0;
-         while (totalSent < bytesToSend) {
-             int sent = send(sock, sendData + totalSent, bytesToSend - totalSent, 0);
-             if (sent == SOCKET_ERROR) {
-                 std::cerr << "send() 실패" << std::endl;
-                 goto cleanup;
-             }
-             totalSent += sent;
-         }
- 
-         // 서버 응답 수신
-         int bytesReceived = recv(sock, recvBuf, static_cast<int>(sizeof(recvBuf) - 1), 0);
-         if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
-             std::cout << "서버와 연결이 끊어졌습니다." << std::endl;
-             break;
-         }
- 
-         recvBuf[bytesReceived] = '\0';
-         std::cout << "[Server]: " << recvBuf << std::endl;
+        int side = 0;
+        int price = 0;
+        int quantity = 0;
+
+        std::cout << "> ";
+        if (!(std::cin >> side >> price >> quantity)) {
+            if (std::cin.eof()) {
+                // 입력 스트림 종료 시 루프 종료
+                break;
+            }
+            std::cerr << "입력 오류: 숫자를 정확히 입력하세요." << std::endl;
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            continue;
+        }
+
+        // 남은 입력 라인 정리
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        // 간단한 유효성 검사
+        if (side != 1 && side != 2) {
+            std::cerr << "side는 1(매수) 또는 2(매도)만 허용됩니다." << std::endl;
+            continue;
+        }
+        if (price <= 0 || quantity <= 0) {
+            std::cerr << "가격과 수량은 0보다 커야 합니다." << std::endl;
+            continue;
+        }
+
+        OrderPacket packet{};
+        packet.type = static_cast<int>(PacketType::ORDER); // 항상 ORDER
+        packet.orderId = currentOrderId++;
+        packet.side = side;
+        packet.price = price;
+        packet.quantity = quantity;
+
+        int bytesToSend = static_cast<int>(sizeof(packet));
+        const char* sendData = reinterpret_cast<const char*>(&packet);
+
+        int totalSent = 0;
+        while (totalSent < bytesToSend) {
+            int sent = send(sock, sendData + totalSent, bytesToSend - totalSent, 0);
+            if (sent == SOCKET_ERROR) {
+                std::cerr << "send() 실패: " << WSAGetLastError() << std::endl;
+                goto cleanup;
+            }
+            totalSent += sent;
+        }
+
+        std::cout << "주문 전송 완료 - orderId=" << packet.orderId
+                  << ", side=" << side
+                  << ", price=" << price
+                  << ", qty=" << quantity << std::endl;
      }
  
  cleanup:
