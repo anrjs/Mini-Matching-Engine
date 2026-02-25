@@ -11,12 +11,13 @@
 enum class PacketType : int {
     LOGIN = 1,        // 로그인
     ORDER = 2,        // 주문 접수
-    ORDER_RESULT = 3  // 체결 결과
+    ORDER_RESULT = 3, // 체결 결과
+    CANCEL = 4        // 주문 취소
 };
 
 // 주문 패킷 구조체
 struct OrderPacket {
-    int type;      // 패킷 타입 (항상 ORDER)
+    int type;      // 패킷 타입 (ORDER 또는 CANCEL)
     int orderId;   // 주문 번호
     int side;      // 매수(1) / 매도(2)
     int price;     // 가격

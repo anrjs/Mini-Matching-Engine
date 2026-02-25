@@ -61,68 +61,90 @@
          return 1;
      }
  
-    std::cout << ">>> 서버(127.0.0.1:" << SERVER_PORT << ")에 접속 성공." << std::endl;
-    std::cout << "주문 정보를 입력하세요." << std::endl;
-    std::cout << "형식: [1:매수, 2:매도] [가격] [수량]" << std::endl;
-    std::cout << "예시: 1 1000 10" << std::endl;
+   std::cout << ">>> 서버(127.0.0.1:" << SERVER_PORT << ")에 접속 성공." << std::endl;
+   std::cout << "주문 정보를 입력하세요." << std::endl;
+   std::cout << "형식: [1:매수, 2:매도, 3:취소] [가격/주문번호] [수량(취소시 0)]" << std::endl;
+   std::cout << "예시(매수): 1 1000 10" << std::endl;
+   std::cout << "예시(취소): 3 1 0" << std::endl;
 
-    // ----- 5. 주문 패킷 전송 루프 -----
+    // ----- 5. 주문 / 취소 패킷 전송 루프 -----
     int currentOrderId = 1;
 
      while (true) {
-        int side = 0;
-        int price = 0;
-        int quantity = 0;
+       int cmd = 0;
+       int second = 0;
+       int third = 0;
 
-        std::cout << "> ";
-        if (!(std::cin >> side >> price >> quantity)) {
-            if (std::cin.eof()) {
-                // 입력 스트림 종료 시 루프 종료
-                break;
-            }
-            std::cerr << "입력 오류: 숫자를 정확히 입력하세요." << std::endl;
-            std::cin.clear();
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-            continue;
-        }
+       std::cout << "> ";
+       if (!(std::cin >> cmd >> second >> third)) {
+           if (std::cin.eof()) {
+               // 입력 스트림 종료 시 루프 종료
+               break;
+           }
+           std::cerr << "입력 오류: 숫자를 정확히 입력하세요." << std::endl;
+           std::cin.clear();
+           std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+           continue;
+       }
 
-        // 남은 입력 라인 정리
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+       // 남은 입력 라인 정리
+       std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
-        // 간단한 유효성 검사
-        if (side != 1 && side != 2) {
-            std::cerr << "side는 1(매수) 또는 2(매도)만 허용됩니다." << std::endl;
-            continue;
-        }
-        if (price <= 0 || quantity <= 0) {
-            std::cerr << "가격과 수량은 0보다 커야 합니다." << std::endl;
-            continue;
-        }
+       OrderPacket packet{};
 
-        OrderPacket packet{};
-        packet.type = static_cast<int>(PacketType::ORDER); // 항상 ORDER
-        packet.orderId = currentOrderId++;
-        packet.side = side;
-        packet.price = price;
-        packet.quantity = quantity;
+       if (cmd == 3) {
+           // 주문 취소
+           int cancelOrderId = second;
+           if (cancelOrderId <= 0) {
+               std::cerr << "취소할 주문번호는 0보다 커야 합니다." << std::endl;
+               continue;
+           }
 
-        int bytesToSend = static_cast<int>(sizeof(packet));
-        const char* sendData = reinterpret_cast<const char*>(&packet);
+           packet.type = static_cast<int>(PacketType::CANCEL);
+           packet.orderId = cancelOrderId;
+           packet.side = 0;
+           packet.price = 0;
+           packet.quantity = 0;
 
-        int totalSent = 0;
-        while (totalSent < bytesToSend) {
-            int sent = send(sock, sendData + totalSent, bytesToSend - totalSent, 0);
-            if (sent == SOCKET_ERROR) {
-                std::cerr << "send() 실패: " << WSAGetLastError() << std::endl;
-                goto cleanup;
-            }
-            totalSent += sent;
-        }
+           std::cout << "주문 취소 전송 - cancelOrderId=" << cancelOrderId << std::endl;
+       } else if (cmd == 1 || cmd == 2) {
+           int side = cmd;
+           int price = second;
+           int quantity = third;
 
-        std::cout << "주문 전송 완료 - orderId=" << packet.orderId
-                  << ", side=" << side
-                  << ", price=" << price
-                  << ", qty=" << quantity << std::endl;
+           // 간단한 유효성 검사
+           if (price <= 0 || quantity <= 0) {
+               std::cerr << "가격과 수량은 0보다 커야 합니다." << std::endl;
+               continue;
+           }
+
+           packet.type = static_cast<int>(PacketType::ORDER);
+           packet.orderId = currentOrderId++; // 자동 증가
+           packet.side = side;
+           packet.price = price;
+           packet.quantity = quantity;
+
+           std::cout << "주문 전송 준비 - orderId=" << packet.orderId
+                     << ", side=" << side
+                     << ", price=" << price
+                     << ", qty=" << quantity << std::endl;
+       } else {
+           std::cerr << "첫 번째 값은 1(매수), 2(매도), 3(취소)만 허용됩니다." << std::endl;
+           continue;
+       }
+
+       int bytesToSend = static_cast<int>(sizeof(packet));
+       const char* sendData = reinterpret_cast<const char*>(&packet);
+
+       int totalSent = 0;
+       while (totalSent < bytesToSend) {
+           int sent = send(sock, sendData + totalSent, bytesToSend - totalSent, 0);
+           if (sent == SOCKET_ERROR) {
+               std::cerr << "send() 실패: " << WSAGetLastError() << std::endl;
+               goto cleanup;
+           }
+           totalSent += sent;
+       }
      }
  
  cleanup:
