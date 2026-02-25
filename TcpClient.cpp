@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <iostream>
 #include <string>
+#include <limits>
 
 #include "Common/Protocol.h"
  
